@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Document Clustering System</title>
+  <style>
+    :root {
+      --bg: #f4f2eb;
+      --card: #fffdf8;
+      --ink: #1f2937;
+      --muted: #5f6b7a;
+      --accent: #0b7a75;
+      --accent-2: #0e9f6e;
+      --border: #d7d2c8;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, #d9efe6 0, transparent 40%),
+        radial-gradient(circle at bottom left, #eadfd0 0, transparent 35%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(31, 41, 55, 0.08);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      letter-spacing: 0.2px;
+    }
+
+    .subtitle {
+      margin: 0 0 20px;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input, select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .row {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .btn {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 16px;
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .result {
+      margin-top: 20px;
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+
+    .error {
+      color: #b91c1c;
+      font-weight: 600;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 14px;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      padding: 8px;
+      vertical-align: top;
+    }
+
+    th { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Document Clustering System</h1>
+    <p class="subtitle">Cluster documents by topic and auto-create folder structure.</p>
+
+    <form id="clusterForm">
+      <div class="grid">
+        <div>
+          <label for="source_path">Source folder path</label>
+          <input id="source_path" name="source_path" placeholder="C:\docs\incoming" required />
+        </div>
+        <div>
+          <label for="destination_path">Destination folder path (optional)</label>
+          <input id="destination_path" name="destination_path" placeholder="C:\docs\clustered" />
+        </div>
+        <div>
+          <label for="mode">Mode</label>
+          <select id="mode" name="mode">
+            <option value="copy">Copy</option>
+            <option value="move">Move</option>
+          </select>
+        </div>
+        <div>
+          <label for="num_clusters">Number of clusters (optional)</label>
+          <input id="num_clusters" name="num_clusters" type="number" min="2" placeholder="auto" />
+        </div>
+      </div>
+
+      <div class="row">
+        <label><input id="recursive" type="checkbox" checked /> Include subfolders</label>
+      </div>
+
+      <div class="row">
+        <button class="btn" type="submit">Run Clustering</button>
+        <span class="hint">Supported: txt/md/csv/json/html/xml/code/pdf/docx</span>
+      </div>
+    </form>
+
+    <div id="result" class="result"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById("clusterForm");
+    const result = document.getElementById("result");
+
+    function escapeHtml(text) {
+      return text
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      result.innerHTML = "<p>Running clustering...</p>";
+
+      const body = {
+        source_path: document.getElementById("source_path").value.trim(),
+        destination_path: document.getElementById("destination_path").value.trim() || null,
+        mode: document.getElementById("mode").value,
+        recursive: document.getElementById("recursive").checked
+      };
+
+      const numClusters = document.getElementById("num_clusters").value.trim();
+      if (numClusters) body.num_clusters = Number(numClusters);
+
+      try {
+        const resp = await fetch("/api/cluster", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+
+        const data = await resp.json();
+        if (!resp.ok) {
+          result.innerHTML = `<p class="error">Error: ${escapeHtml(data.detail || "Unknown error")}</p>`;
+          return;
+        }
+
+        const clusterRows = (data.clusters || [])
+          .map((c) => `<tr><td>${c.cluster_id}</td><td>${c.file_count}</td></tr>`)
+          .join("");
+
+        const fileRows = (data.files || [])
+          .slice(0, 100)
+          .map(
+            (f) => `<tr>
+              <td>${f.cluster_id} (${escapeHtml(f.cluster_topic)})</td>
+              <td>${escapeHtml(f.source)}</td>
+              <td>${escapeHtml(f.target)}</td>
+            </tr>`
+          )
+          .join("");
+
+        result.innerHTML = `
+          <p><b>Status:</b> ${escapeHtml(data.message)}</p>
+          <p><b>Source:</b> ${escapeHtml(data.source_path)}</p>
+          <p><b>Destination:</b> ${escapeHtml(data.destination_path)}</p>
+          <p><b>Processed:</b> ${data.processed_file_count}, <b>Skipped:</b> ${data.skipped_file_count}</p>
+
+          <h3>Cluster Summary</h3>
+          <table>
+            <thead><tr><th>Cluster</th><th>Files</th></tr></thead>
+            <tbody>${clusterRows || "<tr><td colspan='2'>No clusters</td></tr>"}</tbody>
+          </table>
+
+          <h3>File Mapping (first 100)</h3>
+          <table>
+            <thead><tr><th>Cluster</th><th>Source</th><th>Target</th></tr></thead>
+            <tbody>${fileRows || "<tr><td colspan='3'>No files</td></tr>"}</tbody>
+          </table>
+        `;
+      } catch (err) {
+        result.innerHTML = `<p class="error">Error: ${escapeHtml(String(err))}</p>`;
+      }
+    });
+  </script>
+</body>
+</html>
